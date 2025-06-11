@@ -9,12 +9,10 @@ import torch.nn as nn
 import torch.optim as optim
 
 import vgtk
-import wandb
+
 
 # TODO add dataparallel
 # TODO add the_world = ipdb.set_trace
-def bp():
-    import pdb;pdb.set_trace()
 
 class Trainer():
     def __init__(self, opt):
@@ -31,31 +29,29 @@ class Trainer():
         torch.cuda.manual_seed_all(self.opt.seed)
         # np.set_printoptions(precision=3, suppress=True)
 
-        item = self.opt.item if self.opt.mode == 'train' else "debug"
-        category = self.opt.category
-        model_id      = self.opt.exp_num
-        self.root_dir = self.opt.log_dir
-        print('---exp folder is ', self.root_dir)
-
+        # create model dir
+        experiment_id = self.opt.experiment_id if self.opt.mode == 'train' else f"{self.opt.experiment_id}_{self.opt.mode}"
+        model_id = f'model_{time.strftime("%Y%m%d_%H:%M:%S")}'
+        self.root_dir = os.path.join(self.opt.model_dir, experiment_id, model_id)
         os.makedirs(self.root_dir, exist_ok=True)
 
         # saving opt
         opt_path = os.path.join(self.root_dir, 'opt.txt')
+        # TODO: hierarchical args are not compatible wit json dump
+        with open(opt_path, 'w') as fout:
+            json.dump(opt_dict, fout, indent=2)
 
         # create logger
         log_path = os.path.join(self.root_dir, 'log.txt')
         self.logger = vgtk.Logger(log_file=log_path)
         self.logger.log('Setup', f'Logger created! Hello World!')
         self.logger.log('Setup', f'Random seed has been set to {self.opt.seed}')
-        self.logger.log('Setup', f'Experiment id: {item}')
+        self.logger.log('Setup', f'Experiment id: {experiment_id}')
         self.logger.log('Setup', f'Model id: {model_id}')
 
         # ckpt dir
         self.ckpt_dir = os.path.join(self.root_dir, 'ckpt')
         os.makedirs(self.ckpt_dir, exist_ok=True)
-        if self.opt.eval and self.opt.resume_path is not None:
-            self.opt.resume_path = f'{self.ckpt_dir}/{self.opt.resume_path}'
-            print('---pretrained weights from ', self.opt.resume_path)
         self.logger.log('Setup', f'Checkpoint dir created!')
 
         # build dataset
@@ -83,17 +79,11 @@ class Trainer():
 
         # done
         self.logger.log('Setup', 'Setup finished!')
-        if self.opt.use_wandb:
-            print('---setting up wandb log')
-            run_name = f'{model_id}_{category}'
-            wandb.init(project="haoi-pose", name=run_name)
-            wandb.init(config=self.opt)
-            # wandb.watch(self.model)
 
     def train(self):
         self.opt.mode = 'train'
         self.model.train()
-        if self.opt.num_epochs:
+        if self.opt.num_epochs is not None:
             self.train_epoch()
         else:
             self.train_iter()
@@ -118,8 +108,8 @@ class Trainer():
                 self._print_running_stats(step)
 
             if i > 0 and i % self.opt.save_freq == 0:
-                self.test()
                 self._save_network(f'Iter{i}')
+                self.test()
 
     def train_epoch(self):
         for i in range(self.opt.num_epochs):
@@ -136,7 +126,7 @@ class Trainer():
     # TODO: check that the options have the required key collection
     def check_opt(self, opt, print_opt=True):
         self.opt = opt
-        self.device = torch.device('cuda')
+        self.opt.device = torch.device('cuda')
 
     def _print_running_stats(self, step):
         stats = self.summary.get()
@@ -161,24 +151,21 @@ class Trainer():
         raise NotImplementedError('Not implemented')
 
     def _setup_model_multi_gpu(self):
-        # >>>>>>>>>>> modifief by Xiaolong
-        # if torch.cuda.device_count() > 1:
-        #     self.logger.log('Setup', 'Using Multi-gpu and DataParallel!')
-        #     self._use_multi_gpu = True
-        #     self.model = nn.DataParallel(self.model)
-        # else:
-        self.logger.log('Setup', 'Using Single-gpu!')
-        self._use_multi_gpu = False
+        if torch.cuda.device_count() > 1:
+            self.logger.log('Setup', 'Using Multi-gpu and DataParallel!')
+            self._use_multi_gpu = True
+            self.model = nn.DataParallel(self.model)
+        else:
+            self.logger.log('Setup', 'Using Single-gpu!')
+            self._use_multi_gpu = False
 
     def _setup_optim(self):
         self.logger.log('Setup', 'Setup optimizer!')
         # torch.autograd.set_detect_anomaly(True)
         self.optimizer = optim.Adam(self.model.parameters(),
                                     lr=self.opt.train_lr.init_lr)
-        self.lr_schedule = vgtk.LearningRateScheduler(self.optimizer, init_lr=self.opt.train_lr.init_lr, \
-                    lr_type=self.opt.train_lr.lr_type, \
-                    decay_step=self.opt.train_lr.decay_step, \
-                    decay_rate=self.opt.train_lr.decay_rate)
+        self.lr_schedule = vgtk.LearningRateScheduler(self.optimizer,
+                                                      **vars(self.opt.train_lr))
         self.logger.log('Setup', 'Optimizer all-set!')
 
     def _setup_metric(self):
@@ -186,8 +173,20 @@ class Trainer():
         self.metric = None
         raise NotImplementedError('Not implemented')
 
+    # def _resume_from_ckpt(self, resume_path):
+    #     if resume_path is None:
+    #         self.logger.log('Setup', f'Seems like we train from scratch!')
+    #         return
+    #     self.logger.log('Setup', f'Resume from checkpoint: {resume_path}')
+    #     state_dicts = torch.load(resume_path)
+    #     self.model.load_state_dict(state_dicts['model'])
+    #     self.optimizer.load_state_dict(state_dicts['optimizer'])
+    #     self.start_epoch = state_dicts['epoch']
+    #     self.start_iter = state_dicts['iter']
+    #     self.logger.log('Setup', f'Resume finished! Great!')
+
     def _resume_from_ckpt(self, resume_path):
-        if resume_path is None or resume_path is '':
+        if resume_path is None:
             self.logger.log('Setup', f'Seems like we train from scratch!')
             return
         self.logger.log('Setup', f'Resume from checkpoint: {resume_path}')
@@ -202,12 +201,17 @@ class Trainer():
         # self.start_iter = state_dicts['iter']
         self.logger.log('Setup', f'Resume finished! Great!')
 
-    # TODO
-    def _save_network(self, step, label=None):
-        label = self.opt.item if label is None else label
-        save_filename = '%s_net_%s.pth' % (label, step)
-        save_path = os.path.join(self.root_dir, 'ckpt', save_filename)
 
+
+    # TODO
+    def _save_network(self, step, label=None,path=None):
+        label = self.opt.experiment_id if label is None else label
+        if path is None:
+            save_filename = '%s_net_%s.pth' % (label, step)
+            save_path = os.path.join(self.root_dir, 'ckpt', save_filename)
+        else:
+            save_path = f'{path}.pth'
+            
         if self._use_multi_gpu:
             params = self.model.module.cpu().state_dict()
         else:
@@ -216,5 +220,5 @@ class Trainer():
 
         if torch.cuda.is_available():
             # torch.cuda.device(gpu_id)
-            self.model.to(self.device)
+            self.model.to(self.opt.device)
         self.logger.log('Training', f'Checkpoint saved to: {save_path}!')

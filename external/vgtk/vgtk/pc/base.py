@@ -47,7 +47,7 @@ def from_hom_np(pc, batch=False):
 
 def transform_np(pc, T, batch=False):
     pc = pc.T
-
+    
     if pc.shape[-2] == 3:
         pc = to_hom_np(pc)
     if batch:
@@ -62,7 +62,7 @@ def transform_np(pc, T, batch=False):
 def cent(pc):
     axis = 0
     if pc.ndim == 2 and pc.shape[0] == 3:
-        axis = 1
+        axis = 1    
     elif pc.ndim == 3:
         axis += 1
         if pc.shape[1] ==3:

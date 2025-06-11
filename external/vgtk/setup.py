@@ -1,44 +1,65 @@
-#!/usr/bin/env python
-"""Setup vgtk."""
-from itertools import dropwhile
-from setuptools import find_packages, setup
-from os import path
-
-from distutils.extension import Extension
+import os
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
-
-def collect_docstring(lines):
-    """Return document docstring if it exists"""
-    lines = dropwhile(lambda x: not x.startswith('"""'), lines)
-    doc = ""
-    for line in lines:
-        doc += line
-        if doc.endswith('"""\n'):
-            break
-
-    return doc[3:-4].replace("\r", "").replace("\n", " ")
-
-
-def collect_metadata():
-    meta = {}
-    with open(path.join("vgtk", "__init__.py")) as f:
-        lines = iter(f)
-        meta["description"] = collect_docstring(lines)
-        for line in lines:
-            if line.startswith("__"):
-                key, value = map(lambda x: x.strip(), line.split("="))
-                meta[key[2:-2]] = value[1:-1]
-
-    return meta
-
-
-def setup_package():
-    setup(
-        name="vgtk",
-        version='1.0',
-        packages=find_packages(exclude=["docs", "tests", "scripts"]),
+#############################################################
+#############################################################
+PACKAGE_NAME = 'vgtk'
+EXT_MODULES = ['gathering', 'grouping', 'zpconv']
+PACKAGES = ['app', 'cuda', 'functional', 'point3d', 'pc', 'mesh', 'voxel', 'spconv', 'so3conv', 'transform', 'data.anchors']
+INSTALL_REQUIREMENTS = ['numpy',
+                        'torch',
+                        'torchvision', 
+                        'scikit-image==0.18.3',
+                        'scikit-learn==0.20.1',
+                        'open3d==0.9.0.0',
+                        'trimesh==3.2.0',
+                        'tqdm',
+                        'imageio',
+                        'plyfile',
+                        'parse',
+                        'colour']
+#############################################################
+#############################################################
+def cuda_extension(package_name, ext):
+    ext_name = f"{package_name}.cuda.{ext}"
+    ext_cpp = f"{package_name}/cuda/{ext}_cuda.cpp"
+    ext_cu = f"{package_name}/cuda/{ext}_cuda_kernel.cu"
+    
+    return CUDAExtension(
+        ext_name, 
+        [ext_cpp, ext_cu],
+        extra_compile_args={
+            'cxx': [
+                '-g', 
+                '-std=c++14'
+            ],
+            'nvcc': [
+                '-O2', 
+                '-std=c++14', 
+                '--expt-relaxed-constexpr', 
+                '-gencode=arch=compute_86,code=sm_86',
+                # This is the new, more robust way of passing flags to the host compiler (g++)
+                '-Xcompiler', '-D_GLIBCXX_USE_DEPRECATED=0',
+                '-Xcompiler', '-Wno-deprecated-declarations',
+            ]
+        }
     )
 
-if __name__ == "__main__":
-    setup_package()
+pkg_name = PACKAGE_NAME
+ext_modules = [cuda_extension(pkg_name, ext) for ext in EXT_MODULES]
+pkgs = [pkg_name] + [f"{pkg_name}.{pkg}" for pkg in PACKAGES]
+install_reqs = [req for req in INSTALL_REQUIREMENTS]
+setup(
+    description='Vision-Graphics deep learning ToolKit',
+    author='VGL (Shichen Liu*, Haiwei Chen*)',
+    author_email='liushichen95@gmail.com',
+    license='MIT License',
+    version='0.0.1',
+    name=pkg_name,
+    packages=pkgs,
+    package_data={'':['*.ply']},
+    include_package_data=True,
+    install_requires=install_reqs,
+    ext_modules=ext_modules,
+    cmdclass = {'build_ext': BuildExtension}
+)

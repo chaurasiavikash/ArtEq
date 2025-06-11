@@ -44,7 +44,7 @@ __global__ void gather_points_forward_kernel(
     const scalar_t *__restrict__ points,
     const int *__restrict__ idx,
     scalar_t *__restrict__ out,
-    int out_points,
+    int num_points,
     int num_channels,
     int num_indices
     ) {
@@ -57,7 +57,7 @@ __global__ void gather_points_forward_kernel(
 
 
     if (pn < num_indices && ci < num_channels){
-        const int np = out_points;
+        const int np = num_points;
         const int nc = num_channels;
         const int nm = num_indices;
         const int a = idx[bn*nm + pn];
@@ -74,7 +74,7 @@ __global__ void gather_points_backward_kernel(
     const scalar_t *__restrict__ grad_out,
     const int *__restrict__ idx,
     scalar_t *__restrict__ grad_points,
-    int out_points,
+    int num_points,
     int num_channels,
     int num_indices
     ) {
@@ -86,7 +86,7 @@ __global__ void gather_points_backward_kernel(
     const int ci = aidx % num_channels;
 
     if (pn < num_indices){
-        const int np = out_points;
+        const int np = num_points;
         const int nc = num_channels;
         const int nm = num_indices;
 

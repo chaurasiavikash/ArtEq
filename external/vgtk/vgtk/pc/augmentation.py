@@ -25,7 +25,7 @@ def R_from_euler_np(angles):
                     [0,                     1,      0                   ],
                     [-math.sin(angles[1]),   0,      math.cos(angles[1])  ]
                     ])
-
+                 
     R_z = np.array([[math.cos(angles[2]),    -math.sin(angles[2]),    0],
                     [math.sin(angles[2]),    math.cos(angles[2]),     0],
                     [0,                     0,                      1]
@@ -60,14 +60,15 @@ def rotate_point_cloud(data, R = None, max_degree = None):
         rotation is per shape based along up direction
         Input:
           Nx3 array, original point clouds
-        R:
+        R: 
           3x3 array, optional Rotation matrix used to rotate the input
         max_degree:
-          float, optional maximum DEGREE to randomly generate rotation
+          float, optional maximum DEGREE to randomly generate rotation 
         Return:
           Nx3 array, rotated point clouds
     """
     # rotated_data = np.zeros(data.shape, dtype=np.float32)
+
     if R is not None:
       rotation_angle = R
     elif max_degree is not None:
@@ -80,12 +81,12 @@ def rotate_point_cloud(data, R = None, max_degree = None):
     else:
       assert rotation_angle.shape[0] >= 3 and rotation_angle.shape[1] >= 3
       rotation_matrix = rotation_angle[:3, :3]
-
+    
     if data is None:
       return None, rotation_matrix
     rotated_data = np.dot(rotation_matrix, data.reshape((-1, 3)).T)
 
-    return rotated_data.T, rotation_matrix # return [N, 3],
+    return rotated_data.T, rotation_matrix
 
 
 def batch_rotate_point_cloud(data, R = None):
@@ -105,7 +106,7 @@ def batch_rotate_point_cloud(data, R = None):
     else:
       assert rotation_angle.shape[0] >= 3 and rotation_angle.shape[1] >= 3
       rotation_matrix = rotation_angle[:3, :3]
-
+    
     # since we are using pytorch...
     rotation_matrix = torch.from_numpy(rotation_matrix).to(data.device)
     rotation_matrix = rotation_matrix[None].repeat(data.shape[0],1,1)

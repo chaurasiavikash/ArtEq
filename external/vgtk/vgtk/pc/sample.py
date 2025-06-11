@@ -2,12 +2,8 @@ import time
 import numpy as np
 import torch
 
-import epn_grouping as cuda_nn
-import epn_gathering as cuda_gather
-
-def batch_gather(x, idx, dim=1):
-    x = cuda_gather.gather_points_forward(x, idx.int())
-    return x
+import vgtk.cuda.grouping as cuda_nn
+import vgtk.utils as utils
 
 '''
 This file contains operators on point cloud that
@@ -49,7 +45,7 @@ def knn_index_np(pc, k, batch=False):
 # [b, c, n] x [b, m1(, m2, ...)] -> [b, c, m1(, m2, ...)]
 def group_nd(pc, idx):
     b = idx.shape[0]
-    pc = batch_gather(pc, idx.view(b, -1).contiguous(), dim=2)
+    pc = utils.batch_gather(pc, idx.view(b, -1).contiguous(), dim=2)
     pc = pc.view(b, -1, *idx.shape[1:])
     return pc
 
@@ -137,3 +133,4 @@ def radius_ball_search_np(pc, kpt, search_radius, maxpoints):
         all_pc.append(patch)
 
     return all_pc
+

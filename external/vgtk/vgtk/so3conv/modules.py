@@ -6,35 +6,51 @@ from collections import namedtuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from vgtk.so3conv import SphericalPointCloud
+
+from vgtk.spconv import SphericalPointCloud
 import vgtk.pc as pctk
 from . import functional as L
 
+# BasicSO3Conv = BasicZPConv
+
 KERNEL_CONDENSE_RATIO = 0.7
 
-def bp():
-    import pdb;pdb.set_trace()
+
 # Basic SO3Conv
 # [b, c1, k, p, a] -> [b, c2, p, a]
 class BasicSO3Conv(nn.Module):
-    def __init__(self, dim_in, dim_out, kernel_size):
+    def __init__(self, dim_in, dim_out, kernel_size, debug=False):
         super(BasicSO3Conv, self).__init__()
         self.dim_in = dim_in
         self.dim_out = dim_out
         self.kernel_size = kernel_size
-        W = torch.empty(self.dim_out, self.dim_in, self.kernel_size)
-        nn.init.xavier_normal_(W, gain=nn.init.calculate_gain('relu'))
-        W = W.view(self.dim_out, self.dim_in*self.kernel_size)
-        self.register_parameter('W', nn.Parameter(W))
-        bias = torch.zeros(self.dim_out) + 1e-3
-        bias = bias.view(1,self.dim_out,1)
-        self.register_parameter('bias', nn.Parameter(bias))
+
+        # TODO: initialization argument
+        # TODO: add bias
+
+        if debug:
+            W = torch.zeros(self.dim_out, self.dim_in*self.kernel_size) + 1
+            self.register_buffer('W', W)
+        else:
+            W = torch.empty(self.dim_out, self.dim_in, self.kernel_size)
+            # nn.init.xavier_normal_(W, gain=0.001)
+            nn.init.xavier_normal_(W, gain=nn.init.calculate_gain('relu'))
+            # nn.init.normal_(W, mean=0.0, std=0.3)
+            W = W.view(self.dim_out, self.dim_in*self.kernel_size)
+
+            self.register_parameter('W', nn.Parameter(W))
+            # bias = torch.zeros(self.dim_out) + 1e-3
+            # bias = bias.view(1,self.dim_out,1)
+            # self.register_parameter('bias', nn.Parameter(bias))
+
+        #self.W = nn.Parameter(torch.Tensor(self.dim_out, self.dim_in*self.kernel_size))
 
     def forward(self, x):
         bs, np, na = x.shape[0], x.shape[3], x.shape[4]
         x = x.view(bs, self.dim_in*self.kernel_size, np*na)
         x = torch.matmul(self.W, x)
-        x = x + self.bias
+
+        # x = x + self.bias
         x = x.view(bs, self.dim_out, np, na)
         return x
 
@@ -47,7 +63,8 @@ class KernelPropagation(nn.Module):
 
         # get so3 anchors (60x3x3 rotation matrices)
         anchors = L.get_anchors(kanchor)
-
+        # if kpconv:
+        #     anchors = anchors[29][None]
         kernels = np.transpose(anchors @ kernels.T, (2,0,1))
 
         self.radius = radius
@@ -79,10 +96,26 @@ class KernelPropagation(nn.Module):
             centers = clouds
         else:
             centers = self._subsample(clouds)
+
         wts, nnctn = L.initial_anchor_query(frag, centers, self.kernels, self.radius, self.sigma)
+
         # normalization!
         wts = wts / (nnctn + 1.0)
+
+        ###################################
+        # torch.set_printoptions(sci_mode=False)
+        # print('----------------wts------------------------------')
+        # print(wts[0,:,16,0])
+        # print('---------------mean---------------------------')
+        # print(wts[0].mean(-2))
+        # print('---------------std----------------------------')
+        # print(wts[0].std(-2))
+        # print('-----------------------------------------------')
+        # import ipdb; ipdb.set_trace()
+        ####################################
+
         feats = self.basic_conv(wts.unsqueeze(1))
+
         return SphericalPointCloud(centers, feats, self.anchors)
 
 
@@ -100,6 +133,10 @@ class InterSO3Conv(nn.Module):
 
         # get so3 anchors (60x3x3 rotation matrices)
         anchors = L.get_anchors(kanchor)
+
+        # # debug only
+        # if kanchor == 1:
+        #     anchors = anchors[29][None]
 
         # register hyperparameters
         self.dim_in = dim_in
@@ -124,13 +161,23 @@ class InterSO3Conv(nn.Module):
                                   self.radius, self.sigma,
                                   inter_idx, inter_w, self.lazy_sample, pooling=self.pooling)
 
+
+        # torch.set_printoptions(sci_mode=False)
+        # print(feats[0,0,:,16])
+        # print("-----------mean -----------------")
+        # print(feats[0].mean(-2))
+        # print("-----------std -----------------")
+        # print(feats[0].std(-2))
+        # import ipdb; ipdb.set_trace()
         feats = self.basic_conv(feats)
+
         return inter_idx, inter_w, sample_idx, SphericalPointCloud(xyz, feats, self.anchors)
 
 
 class IntraSO3Conv(nn.Module):
     '''
     Note: only use intra conv when kanchor=60
+
     '''
     def __init__(self, dim_in, dim_out):
         super(IntraSO3Conv, self).__init__()
@@ -169,7 +216,7 @@ class PointnetSO3Conv(nn.Module):
         self.embed = nn.Conv2d(self.dim_in, self.dim_out,1)
         self.register_buffer('anchors', torch.from_numpy(anchors))
 
-    def forward(self, x, pool_a=False):
+    def forward(self, x):
         xyz = x.xyz
         feats = x.feats
         nb, nc, np, na = feats.shape
@@ -184,8 +231,5 @@ class PointnetSO3Conv(nn.Module):
             feats = torch.cat([x.feats, xyzr],1)
 
         feats = self.embed(feats)
-        if pool_a:
-            feats = torch.max(feats,-1)[0]
-        else:
-            feats = torch.max(feats,2)[0]
+        feats = torch.max(feats,2)[0]
         return feats # nb, nc, na

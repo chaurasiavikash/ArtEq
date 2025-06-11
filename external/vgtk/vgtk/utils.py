@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 
-import epn_gathering as cuda_gather
+import vgtk.cuda.gathering as cuda_gather
 
 
 # promote input in batch
@@ -31,7 +31,7 @@ def batch_zip(x, y, idx):
 
 # TODO: decay step
 class LearningRateScheduler():
-    def __init__(self, optimizer, init_lr, lr_type, decay_step, decay_rate, **kwargs):
+    def __init__(self, optimizer, init_lr, lr_type, decay_step, **kwargs):
         super(LearningRateScheduler, self).__init__()
 
         self.counter = 0
@@ -40,7 +40,8 @@ class LearningRateScheduler():
         self.lr_type = lr_type
         self.optimizer = optimizer
         self.decay_step = decay_step
-        self.schedule_func = self._get_schedule_func(lr_type, decay_rate=decay_rate, **kwargs)
+        self.schedule_func = self._get_schedule_func(lr_type, **kwargs)
+
 
     def _get_schedule_func(self, lr_type, **kwargs):
         return getattr(self, f'_{lr_type}')(**kwargs)
@@ -48,14 +49,14 @@ class LearningRateScheduler():
     def step(self):
         self.counter += 1
 
-        if self.counter % self.decay_step == 0:
+        if self.counter % self.decay_step == 0: 
             lr = self.schedule_func(self.counter // self.decay_step)
             print("[Optimizer] Adjusting learning rate %f ---> %f"%(self.lr, lr))
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = lr
 
             self.lr = lr
-
+            
 
         return self.lr
 
@@ -107,3 +108,5 @@ def np_expands(tensor, axis, tiles=None):
         return np.tile(tensor, tiles)
     else:
         return tensor
+
+

@@ -23,7 +23,7 @@ class Transform():
     def __init__(self, T):
         '''
         T: [(b, ){3,4}, {3,4}]
-        '''
+        '''     
         self._T = T
 
     @property

@@ -11,12 +11,10 @@ from torch.nn.modules.batchnorm import _BatchNorm
 # from utils_cuda import _neighbor_query, _spherical_conv
 import vgtk
 import vgtk.pc as pctk
-# import epn_zpconv as cuda_zpconv
-# import epn_gathering as gather
-# import epn_grouping as cuda_nn
-import epn_zpconv as cuda_zpconv
-import epn_gathering as gather
-import epn_grouping as cuda_nn
+import vgtk.cuda.zpconv as cuda_zpconv
+import vgtk.cuda.gathering as gather
+import vgtk.cuda.grouping as cuda_nn
+
 
 # load anchors -> [na, 3]
 def get_anchors(anchor):
@@ -35,7 +33,6 @@ def get_anchors(anchor):
         return anchor.detach().cpu()
     else:
         raise ValueError(f'Not recognized anchor type {type(anchor)}')
-    bp()
     ply = pctk.load_ply(ply_path).astype('float32')
     ply = filter_anchor(ply)
     ply = torch.from_numpy(ply)
@@ -193,7 +190,7 @@ def get_intra_kernel_weights(anchor_in, anchor_out, kernels, ann, aperature, sig
     # influence = torch.cos(torch.abs(angles - kernels)) - 1.0
     ######### gaussian
     # influence = -(angles - kernels).pow(2)
-    # influence = torch.exp(influence/sigma)
+    # influence = torch.exp(influence/sigma) 
     # influence = F.softmax(influence/sigma, dim=2)
     ######### end
 
@@ -396,7 +393,7 @@ def inter_zpconv_grouping_naive(inter_idx, inter_w, feats):
 def inter_pooling_naive(inter_idx, sample_idx, feats, alpha=0.5):
     b, p, pnn = inter_idx.shape
     _, c, q, a = feats.shape
-
+    
     new_feats = batched_index_select(feats, 2, sample_idx.long())
     grouped_feats = batched_index_select(add_shadow_feature(feats), 2, inter_idx.long().view(b, -1)).view(b, -1, p, pnn, a)
     return alpha * new_feats + (1 - alpha) * grouped_feats.mean(3)
@@ -446,10 +443,10 @@ def inter_zpconv_grouping_anchor(grouped_xyz, ball_idx, sample_idx, anchors, ker
     ######## linear kernel
     ratio = 3.0
     dist1 = (norm2-knorm2).abs()+(norm2*(theta-theta2)).abs()/ratio
-
+    
     # inter_w = F.relu(1.0 - dist1 / (((sigma)/2.0)**0.5*3), inplace=True)
     inter_w = F.relu(1.0 - dist1 / sigma**0.5, inplace=True)
-
+    
     ######## end
     # inter_w = torch.softmax(-dist2 / sigma, dim=4)
     # import ipdb; ipdb.set_trace()
@@ -495,7 +492,7 @@ def inter_zpconv_grouping(xyz, feats, stride, n_neighbor,
 
     if inter_idx is None:
 
-        grouped_xyz, ball_idx, idx, new_xyz = inter_zpconv_grouping_ball(xyz, stride,
+        grouped_xyz, ball_idx, idx, new_xyz = inter_zpconv_grouping_ball(xyz, stride, 
                                                                          radius * radius_expansion, n_neighbor, lazy_sample)
 
         n_support = xyz.shape[2]
@@ -613,3 +610,4 @@ def anchor_prop(x, idx, w):
 #     influence = influence * suppression
 
 #     return idx.int().contiguous(), influence.contiguous()
+

@@ -9,62 +9,17 @@ from collections import OrderedDict
 from torch.nn.modules.batchnorm import _BatchNorm
 
 # from utils_cuda import _neighbor_query, _spherical_conv
-dirname = os.path.dirname(__file__)
-
-
-def bp():
-    import pdb;pdb.set_trace()
-
 import vgtk
-from vgtk import pc
-import epn_grouping as cuda_nn
+import vgtk.pc as pctk
+import vgtk.cuda.zpconv as cuda_zpconv
+import vgtk.cuda.gathering as gather
+import vgtk.cuda.grouping as cuda_nn
+
+import vgtk.spconv as zpconv
 
 
-
-def acos_safe(x, eps=1e-4):
-    sign = torch.sign(x)
-    slope = np.arccos(1-eps) / eps
-    return torch.where(abs(x) <= 1-eps,
-                    torch.acos(x),
-                    torch.acos(sign * (1 - eps)) - slope*sign*(abs(x) - 1 + eps))
-
-def anchor_knn(a_src, a_tgt, k=3, metric="spherical"):
-    '''
-    for each anchor in a_tgt, find k nearest neighbors in a_src
-        ax3, ax3 -> axk indices, axk distances
-    '''
-    a_src = a_src.unsqueeze(0)
-    a_tgt = a_tgt.unsqueeze(1)
-    # sum(a_tgt x k)
-    if metric == 'spherical':
-        dists = torch.sum(a_src*a_tgt, dim=2) - 1.0
-        val, idx = dists.topk(k=k,dim=1, largest=True)
-    elif metric == 'angular':
-        dists = acos_safe(torch.sum(a_src*a_tgt, dim=2))
-        # dists[dists != dists] = np.pi
-        val, idx = dists.topk(k=k,dim=1, largest=False)
-    else:
-        dists = torch.sum((a_src - a_tgt)**2, dim=2)
-        val, idx = dists.topk(k=k,dim=1, largest=False)
-    return val, idx
-
-def batched_index_select(input, dim, index):
-    for ii in range(1, len(input.shape)):
-        if ii != dim:
-            index = index.unsqueeze(ii)
-    expanse = list(input.shape)
-    expanse[0] = -1
-    expanse[dim] = -1
-    index = index.expand(expanse)
-    return torch.gather(input, dim, index)
-
-def inter_so3conv_feat_grouping(inter_idx, inter_w, feats):
-    b, p, pnn = inter_idx.shape
-    _, c, q, a = feats.shape
-    device = inter_idx.device
-    new_feats = batched_index_select(feats, 2, inter_idx.long().view(b, -1)).view(b, -1, p, pnn, a)
-    new_feats = torch.einsum('bcpna,bpakn->bckpa', new_feats, inter_w).contiguous()
-    return new_feats
+inter_so3conv_feat_grouping = zpconv.inter_zpconv_grouping_naive
+batched_index_select = zpconv.batched_index_select
 
 # pc: [nb,np,3] -> feature: [nb,1,np,na]
 def get_occupancy_features(pc, n_anchor, use_center=False):
@@ -88,82 +43,58 @@ def get_occupancy_features(pc, n_anchor, use_center=False):
 
     return features
 
-# Add shadow xyz (inf)
-# [b, c, n] -> [b, c, n+1]
-def add_shadow_point(x):
-    b, c, _ = x.shape
-    shadow_point = torch.ones(b,c,1).float().to(x.device) * 1e4
-    x = torch.cat((x,shadow_point), dim=2).contiguous()
-    return x
-
-# Add shadow feature (zeros)
-# [b, c, n, a] -> [b, c, n+1, a]
-def add_shadow_feature(x):
-    b, c, _, a = x.shape
-    shadow_point = torch.zeros(b,c,1,a).float().to(x.device)
-    x = torch.cat((x,shadow_point), dim=2).contiguous()
-    return x
 
 # (x,y,z) points derived from conic parameterization
-# def get_kernel_points_np(radius, aperature, kernel_size, multiplier=1):
-#     assert isinstance(kernel_size, int)
-#     rrange = np.linspace(0, radius, kernel_size, dtype=np.float32)
-#     kps = []
+def get_kernel_points_np(radius, aperature, kernel_size, multiplier=1):
+    assert isinstance(kernel_size, int)
+    rrange = np.linspace(0, radius, kernel_size, dtype=np.float32)
+    kps = []
 
-#     for ridx, ri in enumerate(rrange):
-#         alpharange = zpconv.get_angular_kernel_points_np(aperature, ridx * multiplier + 1)
-#         for aidx, alpha in enumerate(alpharange):
-#             r_r = ri * np.tan(alpha)
-#             thetarange = np.linspace(0, 2 * np.pi, aidx * 2 + 1, endpoint=False, dtype=np.float32)
-#             xs = r_r * np.cos(thetarange)
-#             ys = r_r * np.sin(thetarange)
-#             zs = np.repeat(ri, aidx * 2 + 1)
-#             kps.append(np.vstack([xs,ys,zs]).T)
+    for ridx, ri in enumerate(rrange):
+        alpharange = zpconv.get_angular_kernel_points_np(aperature, ridx * multiplier + 1)
+        for aidx, alpha in enumerate(alpharange):
+            r_r = ri * np.tan(alpha)
+            thetarange = np.linspace(0, 2 * np.pi, aidx * 2 + 1, endpoint=False, dtype=np.float32)
+            xs = r_r * np.cos(thetarange)
+            ys = r_r * np.sin(thetarange)
+            zs = np.repeat(ri, aidx * 2 + 1)
+            kps.append(np.vstack([xs,ys,zs]).T)
 
-#     kps = np.vstack(kps)
-#     return kps
+    kps = np.vstack(kps)
+    return kps
 
-# def get_spherical_kernel_points_np(radius, kernel_size, multiplier=3):
-#     assert isinstance(kernel_size, int)
-#     rrange = np.linspace(0, radius, kernel_size, dtype=np.float32)
-#     kps = []
+def get_spherical_kernel_points_np(radius, kernel_size, multiplier=3):
+    assert isinstance(kernel_size, int)
+    rrange = np.linspace(0, radius, kernel_size, dtype=np.float32)
+    kps = []
 
-#     for ridx, r_i in enumerate(rrange):
-#         asize = ridx * multiplier + 1
-#         bsize = ridx * multiplier + 1
-#         alpharange = np.linspace(0, 2*np.pi, asize, endpoint=False, dtype=np.float32)
-#         betarange = np.linspace(0, np.pi, bsize, endpoint=True, dtype=np.float32)
+    for ridx, r_i in enumerate(rrange):
+        asize = ridx * multiplier + 1
+        bsize = ridx * multiplier + 1
+        alpharange = np.linspace(0, 2*np.pi, asize, endpoint=False, dtype=np.float32)
+        betarange = np.linspace(0, np.pi, bsize, endpoint=True, dtype=np.float32)
 
-#         xs = r_i * np.cos(alpharange[:, None]) * np.sin(betarange[None])
-#         ys = r_i * np.sin(alpharange[:, None]) * np.sin(betarange[None])
+        xs = r_i * np.cos(alpharange[:, None]) * np.sin(betarange[None])
+        ys = r_i * np.sin(alpharange[:, None]) * np.sin(betarange[None])
 
-#         zs = r_i * np.cos(betarange)[None].repeat(asize, axis=0)
-#         kps.append(np.vstack([xs.reshape(-1),ys.reshape(-1),zs.reshape(-1)]).T)
+        zs = r_i * np.cos(betarange)[None].repeat(asize, axis=0)
+        kps.append(np.vstack([xs.reshape(-1),ys.reshape(-1),zs.reshape(-1)]).T)
 
-#     kps = np.vstack(kps)
-#     return kps
+    kps = np.vstack(kps)
+    return kps
 
 def get_sphereical_kernel_points_from_ply(radius, kernel_size):
     assert kernel_size <= 3 and kernel_size > 0
-    mapping = {1:24, 2:30, 3:66} # TODO
+    mapping = {1:24, 2:30, 3:66}
     root = vgtk.__path__[0]
     anchors_path = os.path.join(root, 'data', 'anchors')
     ply_path = os.path.join(anchors_path, f'kpsphere{mapping[kernel_size]:d}.ply')
-    # kp24
-    ply = pc.load_ply(ply_path).astype('float32')
+    ply = pctk.load_ply(ply_path).astype('float32')
     def normalize(pc, radius):
         r = np.sqrt((pc**2).sum(1).max())
         return pc*radius/r
     return normalize(ply, radius)
 
-def ball_query(query_points, support_points, radius, n_sample, support_feats=None):
-    idx = pc.ball_query_index(query_points, support_points, radius, n_sample)
-    support_points = add_shadow_point(support_points)
-
-    if support_feats is None:
-        return idx, pc.group_nd(support_points, idx)
-    else:
-        return idx, pc.group_nd(support_points, idx), pc.group_nd(support_feats, idx)
 
 # initial_anchor_query(
 #     at::Tensor centers, //[b, 3, nc]
@@ -173,53 +104,16 @@ def ball_query(query_points, support_points, radius, n_sample, support_feats=Non
 def initial_anchor_query(frag, centers, kernels, r, sigma):
     return cuda_nn.initial_anchor_query(centers, frag, kernels, r, sigma)
 
-def inter_spconv_grouping_ball(xyz, stride, radius, n_neighbor, lazy_sample=True):
-
-    n_sample = math.ceil(xyz.shape[2] / stride)
-    # [b, 3, p1] x [p2] -> [b,p2] x [b, 3, p2]
-    idx, sample_xyz = pc.furthest_sample(xyz, n_sample, lazy_sample)
-    # [b, p2, nn]
-    ball_idx, grouped_xyz = ball_query(sample_xyz, xyz, radius, n_neighbor)
-    # [b, 3, p1+1] x [b, p2, nn] -> [b, 3, p2, nn]
-    grouped_xyz = grouped_xyz - sample_xyz.unsqueeze(3)
-    return grouped_xyz, ball_idx, idx, sample_xyz
-
-
-def inter_spconv_grouping_naive(inter_idx, inter_w, feats):
-    b, p, pnn = inter_idx.shape
-    _, c, q, a = feats.shape
-    device = inter_idx.device
-    new_feats = batched_index_select(feats, 2, inter_idx.long().view(b, -1)).view(b, -1, p, pnn, a)
-    new_feats = torch.einsum('bcpna,bpakn->bckpa', new_feats, inter_w).contiguous()
-    return new_feats
-
-
-def inter_pooling_naive(inter_idx, sample_idx, feats, alpha=0.5):
-    b, p, pnn = inter_idx.shape
-    _, c, q, a = feats.shape
-
-    new_feats = batched_index_select(feats, 2, sample_idx.long())
-    grouped_feats = batched_index_select(add_shadow_feature(feats), 2, inter_idx.long().view(b, -1)).view(b, -1, p, pnn, a)
-    return alpha * new_feats + (1 - alpha) * grouped_feats.mean(3)
-
-
-def inter_blurring_naive(inter_idx, feats, alpha=0.5):
-    b, p, pnn = inter_idx.shape
-    _, c, q, a = feats.shape
-    assert p == q
-    grouped_feats = batched_index_select(add_shadow_feature(feats), 2, inter_idx.long().view(b, -1)).view(b, -1, p, pnn, a)
-    return alpha * feats + (1 - alpha) * grouped_feats.mean(3)
-
 
 def inter_so3conv_blurring(xyz, feats, n_neighbor, radius, stride,
                            inter_idx=None, lazy_sample=True, radius_expansion=1.0):
     if inter_idx is None:
-        _, inter_idx, sample_idx, sample_xyz = inter_spconv_grouping_ball(xyz, stride, radius * radius_expansion, n_neighbor, lazy_sample)
+        _, inter_idx, sample_idx, sample_xyz = zpconv.inter_zpconv_grouping_ball(xyz, stride, radius * radius_expansion, n_neighbor, lazy_sample)
 
     if stride == 1:
-        return inter_blurring_naive(inter_idx, feats), xyz
+        return zpconv.inter_blurring_naive(inter_idx, feats), xyz
     else:
-        return inter_pooling_naive(inter_idx, sample_idx, feats), sample_xyz
+        return zpconv.inter_pooling_naive(inter_idx, sample_idx, feats), sample_xyz
 
 def inter_so3conv_grouping(xyz, feats, stride, n_neighbor,
                           anchors, kernels, radius, sigma,
@@ -254,7 +148,7 @@ def inter_so3conv_grouping(xyz, feats, stride, n_neighbor,
         inter_idx = None
 
     if inter_idx is None:
-        grouped_xyz, inter_idx, sample_idx, new_xyz = inter_spconv_grouping_ball(xyz, stride,
+        grouped_xyz, inter_idx, sample_idx, new_xyz = zpconv.inter_zpconv_grouping_ball(xyz, stride,
                                                                          radius * radius_expansion, n_neighbor, lazy_sample)
         inter_w = inter_so3conv_grouping_anchor(grouped_xyz, anchors, kernels, sigma)
 
@@ -265,19 +159,19 @@ def inter_so3conv_grouping(xyz, feats, stride, n_neighbor,
         # gsample1 = xyz_sample[:,inter_idx[0,12].long()]
         # gsample2 = xyz_sample[:,inter_idx[0,25].long()]
         # gsample3 = xyz_sample[:,inter_idx[0,31].long()]
-        # pc.save_ply('data/gsample2.ply', gsample2.T.cpu().numpy(), c='r')
-        # pc.save_ply('data/gsample3.ply', gsample3.T.cpu().numpy(), c='r')
-        # pc.save_ply('data/xyz.ply', xyz_sample.T.cpu().numpy())
+        # pctk.save_ply('data/gsample2.ply', gsample2.T.cpu().numpy(), c='r')
+        # pctk.save_ply('data/gsample3.ply', gsample3.T.cpu().numpy(), c='r')
+        # pctk.save_ply('data/xyz.ply', xyz_sample.T.cpu().numpy())
 
         # for bi in range(new_xyz.shape[0]):
-        #     pc.save_ply(f'vis/gsample{bi}.ply', new_xyz[bi].T.cpu().numpy())
+        #     pctk.save_ply(f'vis/gsample{bi}.ply', new_xyz[bi].T.cpu().numpy())
         # # import ipdb; ipdb.set_trace()
         #############################################################################
     else:
         sample_idx = None
         new_xyz = xyz
 
-    feats = add_shadow_feature(feats)
+    feats = zpconv.add_shadow_feature(feats)
 
     new_feats = inter_so3conv_feat_grouping(inter_idx, inter_w, feats) # [nb, c_in, ks, np, na]
 
@@ -323,10 +217,6 @@ def inter_so3conv_grouping_anchor(grouped_xyz, anchors,
 
     return inter_w
 
-def get_intra_kernels(aperature, kernel_size):
-    kernels = np.linspace(0, 0.5*aperature, kernel_size, dtype=np.float32)
-    kernels = torch.from_numpy(kernels)
-    return kernels
 
 def intra_so3conv_grouping(intra_idx, feature):
     '''
@@ -384,6 +274,7 @@ import os
 GAMMA_SIZE = 3
 ROOT = vgtk.__path__[0]
 ANCHOR_PATH = os.path.join(ROOT, 'data', 'anchors/sphere12.ply')
+
 Rs, R_idx, canonical_relative = fr.icosahedron_so3_trimesh(ANCHOR_PATH, GAMMA_SIZE)
 
 

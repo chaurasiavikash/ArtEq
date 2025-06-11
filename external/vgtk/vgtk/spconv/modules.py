@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from vgtk.spconv import SphericalPointCloud
 import vgtk.pc as pctk
 from . import functional as L
 
