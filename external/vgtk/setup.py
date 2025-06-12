@@ -1,25 +1,7 @@
 import os
-from setuptools import setup
+from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
-#############################################################
-#############################################################
-PACKAGE_NAME = 'vgtk'
-EXT_MODULES = ['gathering', 'grouping', 'zpconv']
-PACKAGES = ['app', 'cuda', 'functional', 'point3d', 'pc', 'mesh', 'voxel', 'spconv', 'so3conv', 'transform', 'data.anchors']
-INSTALL_REQUIREMENTS = ['numpy',
-                        'torch',
-                        'torchvision', 
-                        'scikit-image==0.18.3',
-                        'scikit-learn==0.20.1',
-                        'open3d==0.9.0.0',
-                        'trimesh==3.2.0',
-                        'tqdm',
-                        'imageio',
-                        'plyfile',
-                        'parse',
-                        'colour']
-#############################################################
-#############################################################
+
 def cuda_extension(package_name, ext):
     ext_name = f"{package_name}.cuda.{ext}"
     ext_cpp = f"{package_name}/cuda/{ext}_cuda.cpp"
@@ -27,39 +9,20 @@ def cuda_extension(package_name, ext):
     
     return CUDAExtension(
         ext_name, 
-        [ext_cpp, ext_cu],
-        extra_compile_args={
-            'cxx': [
-                '-g', 
-                '-std=c++14'
-            ],
-            'nvcc': [
-                '-O2', 
-                '-std=c++14', 
-                '--expt-relaxed-constexpr', 
-                '-gencode=arch=compute_86,code=sm_86',
-                # This is the new, more robust way of passing flags to the host compiler (g++)
-                '-Xcompiler', '-D_GLIBCXX_USE_DEPRECATED=0',
-                '-Xcompiler', '-Wno-deprecated-declarations',
-            ]
-        }
+        [ext_cpp, ext_cu], 
+        extra_compile_args={'cxx': ['-g', '-std=c++14']}
     )
 
-pkg_name = PACKAGE_NAME
-ext_modules = [cuda_extension(pkg_name, ext) for ext in EXT_MODULES]
-pkgs = [pkg_name] + [f"{pkg_name}.{pkg}" for pkg in PACKAGES]
-install_reqs = [req for req in INSTALL_REQUIREMENTS]
 setup(
-    description='Vision-Graphics deep learning ToolKit',
-    author='VGL (Shichen Liu*, Haiwei Chen*)',
-    author_email='liushichen95@gmail.com',
-    license='MIT License',
-    version='0.0.1',
-    name=pkg_name,
-    packages=pkgs,
-    package_data={'':['*.ply']},
-    include_package_data=True,
-    install_requires=install_reqs,
-    ext_modules=ext_modules,
-    cmdclass = {'build_ext': BuildExtension}
-)
+    name='vgtk',
+    version='0.1.0',
+    author='vgtk',
+    packages=find_packages(),
+    ext_modules=[
+        cuda_extension('vgtk', 'gathering'),
+        cuda_extension('vgtk', 'grouping'),
+        cuda_extension('vgtk', 'zpconv'),
+    ],
+    cmdclass={
+        'build_ext': BuildExtension
+    })

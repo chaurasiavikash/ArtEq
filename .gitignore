@@ -1,0 +1,341 @@
+# ArtEq Project .gitignore
+# Exclude data directories and files larger than 1MB
+
+# =============================================================================
+# DATA DIRECTORIES - Exclude all data folders
+# =============================================================================
+data/
+*/data/
+**/data/
+Data/
+*/Data/
+**/Data/
+
+# Specific data patterns
+*.pth.tar
+*.tar
+*.zip
+*.gz
+*.7z
+*.rar
+
+# =============================================================================
+# LARGE FILES - Exclude files larger than 1MB
+# =============================================================================
+# Model files and checkpoints
+*.pth
+*.pt
+*.ckpt
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.safetensors
+
+# Media files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wmv
+*.flv
+*.webm
+*.mp3
+*.wav
+*.flac
+*.ogg
+*.aac
+
+# Image files (typically large)
+*.tiff
+*.tif
+*.bmp
+*.raw
+*.cr2
+*.nef
+*.arw
+*.dng
+
+# Document files
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+
+# Archive files
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tgz
+*.tbz2
+*.txz
+
+# =============================================================================
+# PYTHON
+# =============================================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# =============================================================================
+# MACHINE LEARNING & AI
+# =============================================================================
+# Weights & Biases
+wandb/
+.wandb/
+
+# MLflow
+mlruns/
+.mlflow/
+
+# TensorBoard logs
+runs/
+logs/
+tensorboard_logs/
+tb_logs/
+
+# Experiment tracking
+experiments/*/model_epochs_*.pth
+experiments/*/checkpoints/
+experiments/*/results/
+
+# Dataset caches
+.cache/
+cache/
+*_cache/
+
+# CUDA compilation cache
+.nv_cache/
+.nvidia/
+
+# =============================================================================
+# DEVELOPMENT TOOLS
+# =============================================================================
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+
+# =============================================================================
+# PROJECT SPECIFIC
+# =============================================================================
+# Conda environments
+*.tar.bz2
+environment.tar.gz
+
+# Compiled CUDA extensions
+external/vgtk/build/
+external/*/build/
+*.egg-info/
+
+# ArtEq specific large files
+DFaust_67_train.pth.tar
+DFaust_67_val/
+MPI_Limits/
+papermodel/
+smpl_model/
+
+# Mesh files
+*.obj
+*.ply
+*.off
+*.stl
+*.mesh
+
+# Point cloud files
+*.pts
+*.xyz
+*.pcd
+*.las
+*.laz
+
+# =============================================================================
+# SECURITY
+# =============================================================================
+# Credentials and secrets
+*.key
+*.pem
+*.crt
+*.csr
+.env.local
+.env.*.local
+secrets.json
+config.json
+credentials.json
+
+# =============================================================================
+# COMMON LARGE FILE EXTENSIONS (additional safety)
+# =============================================================================
+# Database files
+*.db
+*.sqlite
+*.mdb
+
+# Compressed files
+*.xz
+*.lz4
+*.zst
+
+# Virtual machine files
+*.vmdk
+*.vdi
+*.vhd
+*.vhdx
+
+# ISO files
+*.iso
+*.img
+
+# Large text files (logs, datasets)
+*.log.*
+*.jsonl
+*.csv.gz
+*.tsv.gz
+
+# =============================================================================
+# GIT LFS (Large File Storage) - if you decide to use it later
+# =============================================================================
+# If you want to track large files with Git LFS instead of ignoring them,
+# you can use these patterns in .gitattributes:
+# *.pth filter=lfs diff=lfs merge=lfs -text
+# *.pkl filter=lfs diff=lfs merge=lfs -text
+# data/** filter=lfs diff=lfs merge=lfs -text
