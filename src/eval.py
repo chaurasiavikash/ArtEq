@@ -81,9 +81,7 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(model_path))
 
     for tar_folder in [Path("./data/DFaust_67_val/"), Path("./data/MPI_Limits/")]:
-        print(
-            f"{args.epoch=}, {args.aug_type=}, {args.kinematic_cond=} {tar_folder.name=} {args.EPN_layer_num=} {args.EPN_input_radius=}"
-        )
+        print(f"epoch={args.epoch}, aug_type={args.aug_type}, kinematic_cond={args.kinematic_cond} tar_folder_name={tar_folder.name} EPN_layer_num={args.EPN_layer_num} EPN_input_radius={args.EPN_input_radius}")
         v2v = {}
         joint_err = {}
         acc = {}
